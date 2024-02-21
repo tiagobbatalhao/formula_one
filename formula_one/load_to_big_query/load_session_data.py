@@ -334,6 +334,115 @@ class PosData(Session):
         ]
         return schema
 
+class CarLapData(Session):
+    output_table = "src_session_carlapdata"
+
+    def _get_by_driver(self, driver_number):
+        dfls = []
+        for _, lap in self.session.laps.pick_driver(driver_number).iterlaps():
+            df = lap.get_car_data().add_differential_distance()
+            df["LapNumber"] = lap["LapNumber"]
+            dfls.append(df)
+        if len(dfls)>0:
+            df = pd.concat(dfls).sort_values(by=["Date"])
+            return df
+
+    def get_data(self):
+        dfs = []
+        for dr in self.session.drivers:
+            try:
+                this = self._get_by_driver(dr)
+                if this is None:
+                    continue
+                this = this.assign(DriverNumber=dr)
+            except (KeyError, ValueError) as e:
+                logger.error(f"Issue with driver {dr}")
+                logger.error(e)
+                continue
+            dfs.append(this)
+        df = pd.concat(dfs)
+        df["ReferenceTime"] = self.session.t0_date
+        df["SessionStartTime"] = self.convert_interval_to_seconds(self.session.session_start_time)
+        for col in ["Time", "SessionTime"]:
+            df[col] = df[col].apply(self.convert_interval_to_seconds).astype(float)
+        for col in ["nGear", "DriverNumber", "LapNumber"]:
+            df[col] = df[col].astype(pd.Int64Dtype())
+        return df
+
+    def get_schema(self):
+        schema = [
+            ("Date", "TIMESTAMP", "NULLABLE"),
+            ("Time", "FLOAT", "NULLABLE"),
+            ("SessionTime", "FLOAT", "NULLABLE"),
+            ("DriverNumber", "INTEGER", "NULLABLE"),
+            ("LapNumber", "INTEGER", "NULLABLE"),
+            ("RPM", "FLOAT", "NULLABLE"),
+            ("Speed", "FLOAT", "NULLABLE"),
+            ("nGear", "INTEGER", "NULLABLE"),
+            ("Throttle", "FLOAT", "NULLABLE"),
+            ("Brake", "BOOLEAN", "NULLABLE"),
+            ("DRS", "INTEGER", "NULLABLE"),
+            ("Source", "STRING", "NULLABLE"),
+            ("DifferentialDistance", "FLOAT", "NULLABLE"),
+            ("ReferenceTime", "TIMESTAMP", "NULLABLE"),
+            ("SessionStartTime", "FLOAT", "NULLABLE"),
+        ]
+        return schema
+
+
+class PosLapData(Session):
+    output_table = "src_session_poslapdata"
+
+    def _get_by_driver(self, driver_number):
+        dfls = []
+        for _, lap in self.session.laps.pick_driver(driver_number).iterlaps():
+            df = lap.get_pos_data()
+            df["LapNumber"] = lap["LapNumber"]
+            dfls.append(df)
+        if len(dfls)>0:
+            df = pd.concat(dfls).sort_values(by=["Date"])
+            return df
+
+    def get_data(self):
+        dfs = []
+        for dr in self.session.drivers:
+            try:
+                this = self._get_by_driver(dr)
+                if this is None:
+                    continue
+                this = this.assign(DriverNumber=dr)
+            except (KeyError, ValueError) as e:
+                logger.error(f"Issue with driver {dr}")
+                logger.error(e)
+                continue
+            dfs.append(this)
+        df = pd.concat(dfs)
+        df["ReferenceTime"] = self.session.t0_date
+        df["SessionStartTime"] = self.convert_interval_to_seconds(self.session.session_start_time)
+        for col in ["Time", "SessionTime"]:
+            df[col] = df[col].apply(self.convert_interval_to_seconds).astype(float)
+        for col in ["DriverNumber", "LapNumber"]:
+            df[col] = df[col].astype(pd.Int64Dtype())
+        return df
+
+    def get_schema(self):
+        schema = [
+            ("Date", "TIMESTAMP", "NULLABLE"),
+            ("Time", "FLOAT", "NULLABLE"),
+            ("SessionTime", "FLOAT", "NULLABLE"),
+            ("DriverNumber", "INTEGER", "NULLABLE"),
+            ("LapNumber", "INTEGER", "NULLABLE"),
+            ("Status", "STRING", "NULLABLE"),
+            ("X", "FLOAT", "NULLABLE"),
+            ("Y", "FLOAT", "NULLABLE"),
+            ("Z", "FLOAT", "NULLABLE"),
+            ("Source", "STRING", "NULLABLE"),
+            ("ReferenceTime", "TIMESTAMP", "NULLABLE"),
+            ("SessionStartTime", "FLOAT", "NULLABLE"),
+        ]
+        return schema
+
+
 def run_event(year, name):
     bq = utils.BigQuery(
         project=os.environ["BIGQUERY_PROJECT"],
@@ -349,6 +458,8 @@ def run_event(year, name):
         RaceControlMessages,
         CarData,
         PosData,
+        CarLapData,
+        PosLapData,
     ]
     for session_type in session_types:
         for cl in classes:
@@ -372,14 +483,19 @@ def run_year(year):
         credentials_path=os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
     )
     query = """
-        SELECT Year, EventName
+        SELECT Year, EventName, EventDate
         FROM {project}.{dataset}.stg_schedule
         WHERE Year = {year}
-        GROUP BY 1,2
+        GROUP BY 1,2,3 ORDER BY EventDate
     """
     events = bq.run_query(query, year=year)
     for _, row in events.iterrows():
-        run_event(row['Year'], row['EventName'])
+        try:
+            run_event(row['Year'], row['EventName'])
+        except ValueError:
+            logger.error("Cannot fetch {} {}".format(row['Year'], row['EventName']))
+            continue
+            
 
 
 if __name__ == "__main__":

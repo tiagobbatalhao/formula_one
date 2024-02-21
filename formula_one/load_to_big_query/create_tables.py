@@ -1,9 +1,10 @@
-import utils
 from pathlib import Path
-import os
+import os, sys
+sys.path.append(str(Path(__file__).parent.parent))
+import utils
 
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent.parent / ".envrc")
+load_dotenv(str(Path(__file__).parent.parent.parent / ".envrc"))
 
 def run_query(filename):
     bq = utils.BigQuery(

@@ -3,6 +3,9 @@
 .cache
 formula_one/drafts
 **/.DS_Store
+**/data
+**/data_parsed
+**/cache
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

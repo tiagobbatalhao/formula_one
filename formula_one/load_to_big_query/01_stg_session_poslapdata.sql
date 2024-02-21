@@ -1,15 +1,15 @@
-create or replace view {project}.{dataset}.stg_schedule
+create or replace view {project}.{dataset}.stg_session_poslapdata
 OPTIONS()
 as 
     with
     src as (
         select * from 
-        {project}.{dataset}.src_schedule
+        {project}.{dataset}.src_session_poslapdata
     ),
     final as (
         select * from src
         qualify rank() over (
-            partition by `Year`, RoundNumber
+            partition by EventYear, EventName, SessionType
             order by uploaded_at desc
         ) = 1
     )
